@@ -6,6 +6,8 @@ import {
   Sprout,
   ShoppingBag,
   Trophy,
+  BarChart2,
+  Vote,
   User,
 } from 'lucide-react'
 import { TopBar } from '@/components/wallet/TopBar'
@@ -14,6 +16,7 @@ interface NavItem {
   to: string
   icon: React.ReactNode
   label: string
+  disabled?: boolean
 }
 
 const navItems: NavItem[] = [
@@ -23,6 +26,8 @@ const navItems: NavItem[] = [
   { to: '/farming', icon: <Sprout size={18} />, label: 'Farming' },
   { to: '/market', icon: <ShoppingBag size={18} />, label: 'Market' },
   { to: '/leaderboard', icon: <Trophy size={18} />, label: 'Leaderboard' },
+  { to: '/stats', icon: <BarChart2 size={18} />, label: 'Stats' },
+  { to: '/vote', icon: <Vote size={18} />, label: 'Vote', disabled: true },
   { to: '/profile', icon: <User size={18} />, label: 'Profile' },
 ]
 
@@ -38,17 +43,19 @@ function SidebarLink({ item }: { item: NavItem }) {
         borderRadius: '8px',
         fontSize: '14px',
         fontWeight: isActive ? 600 : 400,
-        color: isActive ? '#a78bfa' : '#94a3b8',
+        color: item.disabled ? '#4b5563' : isActive ? '#a78bfa' : '#94a3b8',
         background: isActive ? 'rgba(124, 58, 237, 0.15)' : 'transparent',
         borderLeft: isActive ? '2px solid #7c3aed' : '2px solid transparent',
         textDecoration: 'none',
         transition: 'all 0.15s ease',
         marginLeft: '6px',
         marginRight: '6px',
+        pointerEvents: item.disabled ? 'none' : 'auto',
+        opacity: item.disabled ? 0.5 : 1,
       })}
       onMouseEnter={e => {
         const el = e.currentTarget
-        if (!el.getAttribute('aria-current')) {
+        if (!el.getAttribute('aria-current') && !item.disabled) {
           el.style.background = 'rgba(255, 255, 255, 0.05)'
         }
       }}
@@ -61,6 +68,11 @@ function SidebarLink({ item }: { item: NavItem }) {
     >
       {item.icon}
       <span>{item.label}</span>
+      {item.disabled && (
+        <span style={{ fontSize: '9px', color: '#f97316', background: 'rgba(249,115,22,0.15)', padding: '1px 5px', borderRadius: 4, marginLeft: 'auto' }}>
+          SOON
+        </span>
+      )}
     </NavLink>
   )
 }

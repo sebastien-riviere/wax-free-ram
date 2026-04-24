@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Sprout, X } from 'lucide-react'
+import { Sprout, X, Info } from 'lucide-react'
 import { useFarming } from '@/hooks/useFarming'
 import type { NFT, Rarity } from '@/types'
 
@@ -14,9 +14,18 @@ const RARITY_COLOR: Record<Rarity, string> = {
   common: '#6b7280', rare: '#2563eb', epic: '#7c3aed', legendary: '#d97706', mythic: '#ec4899',
 }
 
+// Daily rates per brief v4 (ZOT/j base, no profile boost)
 const DAILY_RATES: Record<string, number> = {
-  common: 10, rare: 30, epic: 80, legendary: 200, mythic: 500,
+  common: 5, rare: 15, epic: 40, legendary: 100, mythic: 280,
 }
+
+// Withdrawal fee by stake duration (anti-bot mechanism)
+const FEE_TIERS = [
+  { label: '< 24h', fee: '20%', color: '#ef4444', note: 'Anti-bot' },
+  { label: '24h – 7j', fee: '10%', color: C.orange, note: 'Standard' },
+  { label: '7j – 30j', fee: '5%', color: '#eab308', note: 'Fidélité' },
+  { label: '> 30j', fee: '2%', color: '#22c55e', note: 'Long terme' },
+]
 
 function NFTPlaceholder({ rarity }: { rarity: Rarity }) {
   return (
@@ -57,7 +66,10 @@ function StakeModal({ nft, onConfirm, onCancel }: { nft: NFT; onConfirm: () => v
             <span style={{ color: RARITY_COLOR[nft.rarity], fontWeight: 600, textTransform: 'capitalize' }}>{nft.rarity}</span>
           </div>
         </div>
-        <p style={{ color: C.orange, fontSize: 12, marginBottom: 20 }}>⚠ 7 day cooldown before unstaking</p>
+        <div style={{ background: C.orange + '11', border: `1px solid ${C.orange}33`, borderRadius: 8, padding: 10, marginBottom: 20 }}>
+          <p style={{ color: C.orange, fontSize: 11, marginBottom: 4, fontWeight: 600 }}>⚠ Fee de retrait selon durée</p>
+          <p style={{ color: C.muted, fontSize: 11 }}>Unstake &lt; 24h → 20% fee · &gt; 30j → 2% fee</p>
+        </div>
         <div style={{ display: 'flex', gap: 12 }}>
           <button onClick={onCancel} style={{ flex: 1, padding: '10px 0', background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 8, color: C.muted, cursor: 'pointer' }}>Cancel</button>
           <button onClick={onConfirm} style={{ flex: 1, padding: '10px 0', background: C.teal, border: 'none', borderRadius: 8, color: '#fff', fontWeight: 700, cursor: 'pointer', boxShadow: `0 0 16px ${C.teal}66` }}>Stake</button>
@@ -68,6 +80,11 @@ function StakeModal({ nft, onConfirm, onCancel }: { nft: NFT; onConfirm: () => v
 }
 
 function UnstakeModal({ nft, pending, onConfirm, onCancel }: { nft: NFT; pending: number; onConfirm: () => void; onCancel: () => void }) {
+  // Mock: assume staked > 7j for demo
+  const feePct = 5
+  const feeAmount = pending * (feePct / 100)
+  const netReward = pending - feeAmount
+
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
@@ -84,10 +101,18 @@ function UnstakeModal({ nft, pending, onConfirm, onCancel }: { nft: NFT; pending
           <button onClick={onCancel} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted }}><X size={18} /></button>
         </div>
         <p style={{ color: C.muted, fontSize: 14, marginBottom: 16 }}>{nft.name}</p>
-        <div style={{ background: '#0a0a0f', borderRadius: 8, padding: 12, marginBottom: 16 }}>
+        <div style={{ background: '#0a0a0f', borderRadius: 8, padding: 12, marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: C.muted, fontSize: 13 }}>Pending reward</span>
-            <span style={{ color: C.teal, fontWeight: 700 }}>{pending.toFixed(4)} ZOT</span>
+            <span style={{ color: C.muted, fontSize: 13 }}>Pending brut</span>
+            <span style={{ color: C.text, fontWeight: 600 }}>{pending.toFixed(4)} ZOT</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: C.orange, fontSize: 13 }}>Fee retrait (7–30j = {feePct}%)</span>
+            <span style={{ color: C.orange, fontWeight: 600 }}>−{feeAmount.toFixed(4)} ZOT</span>
+          </div>
+          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 8, display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: C.teal, fontWeight: 700 }}>Net reçu</span>
+            <span style={{ color: C.teal, fontWeight: 800, fontSize: 15 }}>{netReward.toFixed(4)} ZOT</span>
           </div>
         </div>
         <p style={{ color: '#22c55e', fontSize: 12, marginBottom: 20 }}>✓ Cooldown complete — ready to unstake</p>
@@ -104,6 +129,7 @@ export default function Farming() {
   const { staked, available, pendingRewards, totalPending, isLoading, stake, unstake, claimAll } = useFarming()
   const [stakeTarget, setStakeTarget] = useState<NFT | null>(null)
   const [unstakeTarget, setUnstakeTarget] = useState<NFT | null>(null)
+  const [showFeeInfo, setShowFeeInfo] = useState(false)
 
   const totalDailyRate = staked.reduce((s, n) => s + (DAILY_RATES[n.rarity] ?? 0), 0)
 
@@ -141,7 +167,7 @@ export default function Farming() {
       </div>
 
       {/* Daily Rate Table */}
-      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, marginBottom: 24 }}>
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, marginBottom: 16 }}>
         <h3 style={{ color: C.text, fontWeight: 600, marginBottom: 12 }}>Daily Rates by Rarity</h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
           {Object.entries(DAILY_RATES).map(([rarity, rate]) => (
@@ -149,6 +175,33 @@ export default function Farming() {
               <p style={{ color: RARITY_COLOR[rarity as Rarity], fontSize: 11, fontWeight: 600, textTransform: 'capitalize', marginBottom: 2 }}>{rarity}</p>
               <p style={{ color: C.teal, fontWeight: 800, fontSize: 14 }}>{rate}</p>
               <p style={{ color: C.muted, fontSize: 10 }}>ZOT/d</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Fee Structure */}
+      <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20, marginBottom: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <h3 style={{ color: C.text, fontWeight: 600 }}>Fee de retrait (pondéré par durée)</h3>
+          <button
+            onClick={() => setShowFeeInfo(!showFeeInfo)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.muted }}
+          >
+            <Info size={15} />
+          </button>
+        </div>
+        {showFeeInfo && (
+          <p style={{ color: C.muted, fontSize: 12, marginBottom: 12, background: '#0a0a0f', borderRadius: 8, padding: 10 }}>
+            Les fees de retrait sont prélevés sur la récompense au moment du unstake. Ils sont brûlés (sink ZOT permanent). Plus tu stakes longtemps, moins tu paies.
+          </p>
+        )}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+          {FEE_TIERS.map(tier => (
+            <div key={tier.label} style={{ textAlign: 'center', background: '#0a0a0f', borderRadius: 8, padding: '10px 6px', border: `1px solid ${tier.color}33` }}>
+              <p style={{ color: C.muted, fontSize: 10, marginBottom: 4 }}>{tier.label}</p>
+              <p style={{ color: tier.color, fontWeight: 800, fontSize: 18 }}>{tier.fee}</p>
+              <p style={{ color: C.muted, fontSize: 10, marginTop: 2 }}>{tier.note}</p>
             </div>
           ))}
         </div>

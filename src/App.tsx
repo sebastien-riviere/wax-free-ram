@@ -7,6 +7,8 @@ import Burn from '@/pages/Burn'
 import Farming from '@/pages/Farming'
 import Market from '@/pages/Market'
 import Leaderboard from '@/pages/Leaderboard'
+import Stats from '@/pages/Stats'
+import Vote from '@/pages/Vote'
 import Profile from '@/pages/Profile'
 
 export default function App() {
@@ -22,6 +24,8 @@ export default function App() {
             <Route path="farming" element={<Farming />} />
             <Route path="market" element={<Market />} />
             <Route path="leaderboard" element={<Leaderboard />} />
+            <Route path="stats" element={<Stats />} />
+            <Route path="vote" element={<Vote />} />
             <Route path="profile" element={<Profile />} />
           </Route>
         </Routes>

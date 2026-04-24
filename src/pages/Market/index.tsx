@@ -28,6 +28,7 @@ interface Drop {
   id: string
   name: string
   priceZOT: number
+  priceWAX?: number  // dual pricing — undefined = ZOT only
   stock: number
   totalStock: number
   expiresAt?: number
@@ -36,8 +37,8 @@ interface Drop {
 
 const MOCK_DROPS: Drop[] = [
   { id: '1', name: 'Mystic Faucet Tool', priceZOT: 150, stock: 47, totalStock: 100, expiresAt: Date.now() + 3600000 * 48, rarity: 'rare' },
-  { id: '2', name: 'Inferno Burn Set', priceZOT: 280, stock: 12, totalStock: 50, rarity: 'epic' },
-  { id: '3', name: 'Legendary Profil Alpha', priceZOT: 500, stock: 3, totalStock: 10, expiresAt: Date.now() + 3600000 * 6, rarity: 'legendary' },
+  { id: '2', name: 'Inferno Burn Set', priceZOT: 280, priceWAX: 3.5, stock: 12, totalStock: 50, rarity: 'epic' },
+  { id: '3', name: 'Legendary Profil Alpha', priceZOT: 500, priceWAX: 8.0, stock: 3, totalStock: 10, expiresAt: Date.now() + 3600000 * 6, rarity: 'legendary' },
   { id: '4', name: 'Farm Bundle Starter', priceZOT: 95, stock: 200, totalStock: 500, rarity: 'common' },
 ]
 
@@ -129,7 +130,11 @@ function RarityBadge({ rarity }: { rarity: string }) {
 
 // ── Modal ───────────────────────────────────────────────────────────────────
 
-function ConfirmModal({ name, price, onConfirm, onCancel }: { name: string; price: number; onConfirm: () => void; onCancel: () => void }) {
+function ConfirmModal({ name, priceZOT, priceWAX, onConfirm, onCancel }: {
+  name: string; priceZOT: number; priceWAX?: number; onConfirm: (currency: 'zot' | 'wax') => void; onCancel: () => void
+}) {
+  const [currency, setCurrency] = useState<'zot' | 'wax'>('zot')
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.7)' }}>
       <motion.div
@@ -146,13 +151,40 @@ function ConfirmModal({ name, price, onConfirm, onCancel }: { name: string; pric
             <X size={18} />
           </button>
         </div>
-        <p className="text-sm mb-6" style={{ color: COLORS.muted }}>
-          You're about to buy <span style={{ color: COLORS.text, fontWeight: 600 }}>{name}</span> for{' '}
-          <span style={{ color: COLORS.violet, fontWeight: 700 }}>{price} ZOT</span>. Confirm?
+        <p className="text-sm mb-4" style={{ color: COLORS.muted }}>
+          Acheter <span style={{ color: COLORS.text, fontWeight: 600 }}>{name}</span>
         </p>
+        {priceWAX ? (
+          <div className="flex gap-2 mb-4">
+            <button
+              onClick={() => setCurrency('zot')}
+              className="flex-1 py-2 rounded-lg text-sm font-semibold transition-all"
+              style={{
+                background: currency === 'zot' ? COLORS.violet + '33' : 'transparent',
+                border: `1px solid ${currency === 'zot' ? COLORS.violet : COLORS.border}`,
+                color: currency === 'zot' ? '#a78bfa' : COLORS.muted,
+              }}
+            >
+              {priceZOT} ZOT
+            </button>
+            <button
+              onClick={() => setCurrency('wax')}
+              className="flex-1 py-2 rounded-lg text-sm font-semibold transition-all"
+              style={{
+                background: currency === 'wax' ? COLORS.teal + '33' : 'transparent',
+                border: `1px solid ${currency === 'wax' ? COLORS.teal : COLORS.border}`,
+                color: currency === 'wax' ? COLORS.teal : COLORS.muted,
+              }}
+            >
+              {priceWAX} WAX
+            </button>
+          </div>
+        ) : (
+          <p className="text-sm font-bold mb-4" style={{ color: COLORS.violet }}>{priceZOT} ZOT</p>
+        )}
         <div className="flex gap-3">
           <Button variant="secondary" size="md" fullWidth onClick={onCancel}>Cancel</Button>
-          <Button variant="primary" size="md" fullWidth onClick={onConfirm}>Confirm</Button>
+          <Button variant="primary" size="md" fullWidth onClick={() => onConfirm(currency)}>Confirm</Button>
         </div>
       </motion.div>
     </div>
@@ -293,9 +325,16 @@ function DropCard({ drop, onBuy }: { drop: Drop; onBuy: (drop: Drop) => void }) 
           )}
         </div>
 
-        <div className="mt-auto pt-2 flex items-center justify-between">
-          <span className="text-base font-bold" style={{ color: COLORS.violet }}>{drop.priceZOT} ZOT</span>
-          <Button variant="primary" size="sm" onClick={() => onBuy(drop)}>BUY</Button>
+        <div className="mt-auto pt-2">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-base font-bold" style={{ color: COLORS.violet }}>{drop.priceZOT} ZOT</span>
+              {drop.priceWAX && (
+                <p className="text-xs mt-0.5" style={{ color: COLORS.teal }}>ou {drop.priceWAX} WAX</p>
+              )}
+            </div>
+            <Button variant="primary" size="sm" onClick={() => onBuy(drop)}>BUY</Button>
+          </div>
         </div>
       </div>
     </div>
@@ -441,6 +480,7 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
 export default function Market() {
   const [activeTab, setActiveTab] = useState<Tab>('drops')
   const [confirmDrop, setConfirmDrop] = useState<Drop | null>(null)
+  const [_buyCurrency, setBuyCurrency] = useState<'zot' | 'wax'>('zot')
   const [openingPack, setOpeningPack] = useState<Pack | null>(null)
 
   return (
@@ -519,8 +559,9 @@ export default function Market() {
           <ConfirmModal
             key="confirm"
             name={confirmDrop.name}
-            price={confirmDrop.priceZOT}
-            onConfirm={() => setConfirmDrop(null)}
+            priceZOT={confirmDrop.priceZOT}
+            priceWAX={confirmDrop.priceWAX}
+            onConfirm={(c) => { setBuyCurrency(c); setConfirmDrop(null) }}
             onCancel={() => setConfirmDrop(null)}
           />
         )}

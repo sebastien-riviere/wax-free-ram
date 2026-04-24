@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Flame } from 'lucide-react'
+import { Flame, Database } from 'lucide-react'
 import { mockExternalNFTs, mockToolBurn } from '@/services/mocks/mockNFTs'
 import type { NFT, Rarity } from '@/types'
 
 const C = {
   bg: '#0a0a0f', card: '#141420', border: 'rgba(255,255,255,0.12)',
-  violet: '#7c3aed', orange: '#f97316', teal: '#0d9488',
+  violet: '#7c3aed', orange: '#f97316', teal: '#0d9488', green: '#22c55e',
   text: '#e2e8f0', muted: '#94a3b8',
 }
 
@@ -17,6 +17,18 @@ const RARITY_COLOR: Record<Rarity, string> = {
 const RARITY_BASE_ZOT: Record<Rarity, number> = {
   common: 5, rare: 20, epic: 60, legendary: 150, mythic: 400,
 }
+
+// RAM bytes freed per rarity (mock — real value from asset.ram_usage via AtomicAssets API)
+const RARITY_RAM_BYTES: Record<Rarity, number> = {
+  common: 192, rare: 256, epic: 384, legendary: 480, mythic: 512,
+}
+
+// Mock WAX price of RAM: ~0.02 WAX per KB (varies with eosio.rammarket)
+const RAM_WAX_PER_BYTE = 0.0000195
+
+// Reward split: 80% ZOT, 20% WAX (ratio from swap_config)
+const RATIO_ZOT = 0.80
+const RATIO_WAX = 0.20
 
 function NFTPlaceholder({ rarity, size = 100 }: { rarity: Rarity; size?: number }) {
   return (
@@ -35,8 +47,9 @@ function NFTPlaceholder({ rarity, size = 100 }: { rarity: Rarity; size?: number 
   )
 }
 
-function ConfirmModal({ nfts, reward, onConfirm, onCancel }: {
-  nfts: NFT[]; reward: number; onConfirm: () => void; onCancel: () => void
+function ConfirmModal({ nfts, rewardZOT, rewardWAX, ramFreedKB, onConfirm, onCancel }: {
+  nfts: NFT[]; rewardZOT: number; rewardWAX: number; ramFreedKB: number
+  onConfirm: () => void; onCancel: () => void
 }) {
   return (
     <motion.div
@@ -50,10 +63,27 @@ function ConfirmModal({ nfts, reward, onConfirm, onCancel }: {
         onClick={e => e.stopPropagation()}
       >
         <h3 style={{ color: C.text, fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Confirm Burn</h3>
-        <p style={{ color: C.muted, fontSize: 14, marginBottom: 24 }}>
-          Burn <strong style={{ color: C.orange }}>{nfts.length} NFT{nfts.length > 1 ? 's' : ''}</strong> for approximately{' '}
-          <strong style={{ color: C.orange }}>~{reward.toFixed(2)} ZOT</strong>?
+        <p style={{ color: C.muted, fontSize: 14, marginBottom: 16 }}>
+          Burn <strong style={{ color: C.orange }}>{nfts.length} NFT{nfts.length > 1 ? 's' : ''}</strong>?
         </p>
+
+        <div style={{ background: '#0a0a0f', borderRadius: 10, padding: 14, marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: C.muted, fontSize: 13 }}>ZOT reward (80%)</span>
+            <span style={{ color: C.orange, fontWeight: 700, fontSize: 13 }}>~{rewardZOT.toFixed(2)} ZOT</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: C.muted, fontSize: 13 }}>WAX reward (20%)</span>
+            <span style={{ color: C.teal, fontWeight: 700, fontSize: 13 }}>~{rewardWAX.toFixed(4)} WAX</span>
+          </div>
+          <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 8, display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: C.muted, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Database size={12} /> RAM freed
+            </span>
+            <span style={{ color: C.green, fontWeight: 600, fontSize: 12 }}>{ramFreedKB.toFixed(2)} KB</span>
+          </div>
+        </div>
+
         <p style={{ color: '#ef4444', fontSize: 12, marginBottom: 20 }}>⚠ This action is irreversible.</p>
         <div style={{ display: 'flex', gap: 12 }}>
           <button
@@ -106,6 +136,11 @@ export default function Burn() {
   const baseReward = selectedNFTs.reduce((sum, n) => sum + RARITY_BASE_ZOT[n.rarity], 0)
   const boostReward = baseReward * (burnBoost / 100)
   const totalReward = baseReward + boostReward
+  const rewardZOT = totalReward * RATIO_ZOT
+  const rewardWAX = totalReward * RATIO_WAX * 0.001 // illustrative WAX conversion
+  const totalRAMBytes = selectedNFTs.reduce((sum, n) => sum + RARITY_RAM_BYTES[n.rarity], 0)
+  const totalRAMKB = totalRAMBytes / 1024
+  const totalRAMWAX = totalRAMBytes * RAM_WAX_PER_BYTE
 
   const toggle = (id: string) => {
     setSelected(prev => {
@@ -119,8 +154,8 @@ export default function Burn() {
     setNfts(prev => prev.filter(n => !selected.has(n.assetId)))
     setSelected(new Set())
     setShowModal(false)
-    setToast(`+${totalReward.toFixed(2)} ZOT burned!`)
-    setTimeout(() => setToast(''), 3000)
+    setToast(`+${rewardZOT.toFixed(2)} ZOT · +${rewardWAX.toFixed(4)} WAX 🔥`)
+    setTimeout(() => setToast(''), 3500)
   }
 
   const collections = ['all', ...Array.from(new Set(nfts.map(n => n.collection)))]
@@ -134,7 +169,9 @@ export default function Burn() {
         {/* Left: BurnInterface */}
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 4 }}>🔥 Burn NFTs</h1>
-          <p style={{ color: C.muted, fontSize: 14, marginBottom: 20 }}>Select NFTs to burn and earn ZOT rewards</p>
+          <p style={{ color: C.muted, fontSize: 14, marginBottom: 20 }}>
+            Select NFTs to burn — earn <span style={{ color: C.orange }}>ZOT</span> + <span style={{ color: C.teal }}>WAX</span> rewards and free RAM
+          </p>
 
           {/* Filters */}
           <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
@@ -156,31 +193,39 @@ export default function Burn() {
 
           {/* NFT Grid */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12, marginBottom: 24 }}>
-            {filtered.map(nft => (
-              <motion.div
-                key={nft.assetId} onClick={() => toggle(nft.assetId)}
-                whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                style={{
-                  background: C.card, border: `2px solid ${selected.has(nft.assetId) ? C.orange : C.border}`,
-                  borderRadius: 12, padding: 12, cursor: 'pointer',
-                  boxShadow: selected.has(nft.assetId) ? `0 0 16px ${C.orange}44` : 'none',
-                }}
-              >
-                <NFTPlaceholder rarity={nft.rarity} size={80} />
-                <p style={{ fontSize: 12, fontWeight: 600, color: C.text, marginTop: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nft.name}</p>
-                <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{nft.collection}</p>
-                <span style={{ fontSize: 10, color: RARITY_COLOR[nft.rarity], background: RARITY_COLOR[nft.rarity] + '22', padding: '2px 6px', borderRadius: 9999, marginTop: 4, display: 'inline-block' }}>
-                  {nft.rarity}
-                </span>
-                <p style={{ fontSize: 12, color: C.orange, marginTop: 4, fontWeight: 600 }}>~{RARITY_BASE_ZOT[nft.rarity]} ZOT</p>
-              </motion.div>
-            ))}
+            {filtered.map(nft => {
+              const ramKB = (RARITY_RAM_BYTES[nft.rarity] / 1024).toFixed(2)
+              return (
+                <motion.div
+                  key={nft.assetId} onClick={() => toggle(nft.assetId)}
+                  whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                  style={{
+                    background: C.card, border: `2px solid ${selected.has(nft.assetId) ? C.orange : C.border}`,
+                    borderRadius: 12, padding: 12, cursor: 'pointer',
+                    boxShadow: selected.has(nft.assetId) ? `0 0 16px ${C.orange}44` : 'none',
+                  }}
+                >
+                  <NFTPlaceholder rarity={nft.rarity} size={80} />
+                  <p style={{ fontSize: 12, fontWeight: 600, color: C.text, marginTop: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nft.name}</p>
+                  <p style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{nft.collection}</p>
+                  <span style={{ fontSize: 10, color: RARITY_COLOR[nft.rarity], background: RARITY_COLOR[nft.rarity] + '22', padding: '2px 6px', borderRadius: 9999, marginTop: 4, display: 'inline-block' }}>
+                    {nft.rarity}
+                  </span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6 }}>
+                    <span style={{ fontSize: 12, color: C.orange, fontWeight: 600 }}>~{RARITY_BASE_ZOT[nft.rarity]} ZOT</span>
+                    <span style={{ fontSize: 10, color: C.green, display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Database size={9} />{ramKB} KB
+                    </span>
+                  </div>
+                </motion.div>
+              )
+            })}
             {filtered.length === 0 && (
               <p style={{ color: C.muted, gridColumn: '1/-1', textAlign: 'center', padding: 32 }}>No NFTs to burn</p>
             )}
           </div>
 
-          {/* OracleSimulator */}
+          {/* Reward Simulator */}
           {selected.size > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
@@ -192,15 +237,31 @@ export default function Burn() {
                   <span style={{ color: C.muted, fontSize: 13 }}>Base value ({selected.size} NFT{selected.size > 1 ? 's' : ''})</span>
                   <span style={{ color: C.text, fontSize: 13, fontWeight: 600 }}>{baseReward.toFixed(2)} ZOT</span>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: burnBoost > 0 ? '#22c55e' : C.muted, fontSize: 13 }}>
-                    Burn Tool boost {burnBoost > 0 ? `(+${burnBoost}%)` : '(no tool)'}
-                  </span>
-                  <span style={{ color: burnBoost > 0 ? '#22c55e' : C.muted, fontSize: 13, fontWeight: 600 }}>+{boostReward.toFixed(2)} ZOT</span>
+                {burnBoost > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#22c55e', fontSize: 13 }}>Burn Tool boost (+{burnBoost}%)</span>
+                    <span style={{ color: '#22c55e', fontSize: 13, fontWeight: 600 }}>+{boostReward.toFixed(2)} ZOT</span>
+                  </div>
+                )}
+                <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 8 }}>
+                  <p style={{ color: C.muted, fontSize: 11, marginBottom: 8 }}>Split — Protocol ratio 80% ZOT / 20% WAX</p>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ color: C.orange, fontSize: 14, fontWeight: 700 }}>🪙 ZOT reward</span>
+                    <span style={{ color: C.orange, fontWeight: 800, fontSize: 16, textShadow: `0 0 12px ${C.orange}88` }}>{rewardZOT.toFixed(2)} ZOT</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: C.teal, fontSize: 14, fontWeight: 700 }}>💧 WAX reward</span>
+                    <span style={{ color: C.teal, fontWeight: 800, fontSize: 16 }}>~{rewardWAX.toFixed(4)} WAX</span>
+                  </div>
                 </div>
-                <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 8, display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: C.text, fontWeight: 700 }}>Total</span>
-                  <span style={{ color: C.orange, fontWeight: 800, fontSize: 18, textShadow: `0 0 12px ${C.orange}88` }}>{totalReward.toFixed(2)} ZOT</span>
+                <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ color: C.green, fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <Database size={12} /> RAM freed
+                  </span>
+                  <div style={{ textAlign: 'right' }}>
+                    <span style={{ color: C.green, fontWeight: 700, fontSize: 13 }}>{totalRAMKB.toFixed(2)} KB</span>
+                    <span style={{ color: C.muted, fontSize: 11, marginLeft: 8 }}>≈ {totalRAMWAX.toFixed(5)} WAX</span>
+                  </div>
                 </div>
               </div>
               <button
@@ -243,18 +304,26 @@ export default function Burn() {
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 12, padding: 20 }}>
             <h3 style={{ color: C.text, fontWeight: 600, marginBottom: 12 }}>Burn History</h3>
             {[
-              { name: 'Alien Worlds Shovel', reward: 5, ts: '2h ago' },
-              { name: 'Splinterlands Card', reward: 23, ts: '6h ago' },
-              { name: 'R-Planet Element', reward: 69, ts: '1d ago' },
-              { name: 'Farming Tales Cow', reward: 5.75, ts: '2d ago' },
-              { name: 'Crypto Panda', reward: 172.5, ts: '3d ago' },
+              { name: 'Alien Worlds Shovel', rewardZOT: 4, rewardWAX: 0.001, ramKB: 0.19, ts: '2h ago' },
+              { name: 'Splinterlands Card', rewardZOT: 18.4, rewardWAX: 0.0046, ramKB: 0.25, ts: '6h ago' },
+              { name: 'R-Planet Element', rewardZOT: 55.2, rewardWAX: 0.0138, ramKB: 0.38, ts: '1d ago' },
+              { name: 'Farming Tales Cow', rewardZOT: 4.6, rewardWAX: 0.00115, ramKB: 0.19, ts: '2d ago' },
+              { name: 'Crypto Panda', rewardZOT: 138, rewardWAX: 0.0345, ramKB: 0.47, ts: '3d ago' },
             ].map((h, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: i < 4 ? `1px solid ${C.border}` : 'none' }}>
-                <div>
-                  <p style={{ color: C.text, fontSize: 12, fontWeight: 500 }}>{h.name}</p>
-                  <p style={{ color: C.muted, fontSize: 11 }}>{h.ts}</p>
+              <div key={i} style={{ padding: '8px 0', borderBottom: i < 4 ? `1px solid ${C.border}` : 'none' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <p style={{ color: C.text, fontSize: 12, fontWeight: 500 }}>{h.name}</p>
+                    <p style={{ color: C.muted, fontSize: 11 }}>{h.ts}</p>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <p style={{ color: C.orange, fontWeight: 700, fontSize: 12 }}>+{h.rewardZOT} ZOT</p>
+                    <p style={{ color: C.teal, fontSize: 11 }}>+{h.rewardWAX} WAX</p>
+                    <p style={{ color: C.green, fontSize: 10, display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'flex-end' }}>
+                      <Database size={9} />{h.ramKB} KB
+                    </p>
+                  </div>
                 </div>
-                <span style={{ color: C.orange, fontWeight: 700, fontSize: 13 }}>+{h.reward} ZOT</span>
               </div>
             ))}
           </div>
@@ -263,7 +332,14 @@ export default function Burn() {
 
       <AnimatePresence>
         {showModal && (
-          <ConfirmModal nfts={selectedNFTs} reward={totalReward} onConfirm={handleBurn} onCancel={() => setShowModal(false)} />
+          <ConfirmModal
+            nfts={selectedNFTs}
+            rewardZOT={rewardZOT}
+            rewardWAX={rewardWAX}
+            ramFreedKB={totalRAMKB}
+            onConfirm={handleBurn}
+            onCancel={() => setShowModal(false)}
+          />
         )}
         {toast && <Toast msg={toast} />}
       </AnimatePresence>
